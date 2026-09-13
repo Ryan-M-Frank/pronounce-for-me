@@ -1,0 +1,9 @@
+# per-machine settings and study log
+config.json
+history.tsv
+
+# portable Python dropped next to the script (see README)
+python/
+
+__pycache__/
+*.pyc

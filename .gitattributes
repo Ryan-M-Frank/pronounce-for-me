@@ -1,0 +1,7 @@
+# Normalise line endings in the repo; Windows script files must stay CRLF.
+* text=auto
+*.py   text eol=lf
+*.md   text eol=lf
+*.json text eol=lf
+*.bat  text eol=crlf
+*.vbs  text eol=crlf
