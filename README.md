@@ -151,8 +151,9 @@ ear with `--say`.
 ## Speed, cache and privacy
 
 * The first time you hear a term the Edge service has to produce it: about
-  1–4 s depending on the voice. The MP3 is then cached (6–15 KB per term), so
-  repeats are instant and work offline.
+  0.5–2 s depending on the voice. The MP3 is then cached (6–15 KB per term), so
+  repeats are instant and work offline. Longer selections are cached one
+  sentence at a time, so a paragraph starts playing after its first sentence.
 * With the `edge` backend the highlighted text is sent to Microsoft's servers.
   Use `"backend": "sapi"` if that's not okay for what you're reading.
 * Edge's read-aloud service is undocumented; Microsoft has changed it before.
@@ -179,7 +180,10 @@ README, no longer works with the newest voice packs.)
 3. The text is tidied — PDF line-wrap hyphens re-joined, `[12]` citation
    markers removed, whitespace collapsed.
 4. **edge:** `edge-tts` fetches an MP3 (cached on disk), which is played
-   through Windows' own `winmm` MCI player — no audio library needed.
+   through Windows' own `winmm` MCI player — no audio library needed. A
+   selection of several sentences is fetched one sentence at a time and each
+   clip plays as soon as it exists, so a paragraph starts after its first
+   sentence rather than after the whole thing has downloaded.
    **sapi:** the text goes to a single long-lived PowerShell process hosting
    `System.Speech.Synthesis.SpeechSynthesizer`; starting PowerShell costs
    ~0.7 s, so it's started once and fed commands over stdin.

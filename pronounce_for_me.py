@@ -37,6 +37,7 @@ import ctypes
 import hashlib
 import json
 import os
+import queue
 import re
 import subprocess
 import sys
@@ -388,6 +389,7 @@ _CITATIONS = re.compile(r"\[\s*\d+(?:\s*[,–-]\s*\d+)*\s*\]")
 _WHITESPACE = re.compile(r"\s+")
 _EDGE_JUNK = " \t\"'“”‘’()[]{}<>.,;:!?*•–—"
 _WORD = re.compile(r"[A-Za-z][A-Za-z'’-]*")
+_SENTENCE_END = re.compile(r"(?<=[.!?;:])\s+")
 
 
 def clean_text(raw: str, max_chars: int) -> str:
@@ -402,6 +404,25 @@ def clean_text(raw: str, max_chars: int) -> str:
         space = cut.rfind(" ")
         text = (cut[:space] if space > max_chars // 2 else cut).rstrip() + "..."
     return text
+
+
+def split_sentences(text: str, min_chars: int = 25) -> list[str]:
+    """Break a selection at sentence ends so a paragraph can start playing after its first sentence.
+
+    Very short pieces ("e.g.", "Fig. 3", a heading ending in a colon) are glued
+    to a neighbour rather than sent to the service as two-word clips. A single
+    word or sentence comes back unchanged, as one chunk.
+    """
+    chunks: list[str] = []
+    for part in _SENTENCE_END.split(text):
+        part = part.strip()
+        if not part:
+            continue
+        if chunks and (len(part) < min_chars or len(chunks[-1]) < min_chars):
+            chunks[-1] = f"{chunks[-1]} {part}"
+        else:
+            chunks.append(part)
+    return chunks or [text]
 
 
 def load_overrides() -> dict[str, str]:
@@ -882,28 +903,70 @@ class EdgeSpeaker:
     def _job(
         self, gen: int, text: str, rate: int | None, blocking: bool, respelled: str | None
     ) -> None:
+        """Fetch the text sentence by sentence and play each clip as soon as it exists.
+
+        A single word is one clip, exactly as before. A paragraph starts playing
+        after its first sentence while a helper thread fetches the rest, so the
+        wait no longer grows with the length of the selection.
+        """
         pct = self._percent(rate)
-        try:
-            path = self._synthesize(text, pct)
-        except Exception as exc:
-            log(f"Edge voice failed ({exc.__class__.__name__}: {exc}); using the Windows voice")
-            if gen == self._gen:
-                self.fallback.say(text, rate, blocking=blocking, respelled=respelled)
-            return
-        if gen != self._gen:
-            return
-        try:
-            play_mp3(path, alias=f"pfm{gen}", cancelled=lambda: gen != self._gen)
-        except RuntimeError as exc:
-            log(f"playback failed ({exc}); using the Windows voice")
-            if gen == self._gen:
-                self.fallback.say(text, rate, blocking=blocking, respelled=respelled)
-        finally:
-            if self.cache_dir is None:
+        chunks = split_sentences(text)
+        ready: queue.Queue[tuple[Path | None, Exception | None]] = queue.Queue()
+
+        def fetch() -> None:
+            for chunk in chunks:
+                if gen != self._gen:
+                    ready.put((None, None))  # cancelled; the player is told so it can stop waiting
+                    return
                 try:
-                    path.unlink()
-                except OSError:
-                    pass
+                    ready.put((self._synthesize(chunk, pct), None))
+                except Exception as exc:
+                    ready.put((None, exc))
+                    return
+
+        if len(chunks) > 1:
+            log(f"  {len(chunks)} sentences; playing each as it arrives")
+            threading.Thread(target=fetch, daemon=True).start()
+        else:
+            fetch()
+
+        for index in range(len(chunks)):
+            path, error = ready.get()
+            if gen != self._gen:
+                self._discard(path)
+                return
+            if path is None:
+                if error is not None:
+                    log(f"Edge voice failed ({error.__class__.__name__}: {error}); using the Windows voice")
+                    self._fallback_from(index, chunks, rate, blocking, respelled)
+                return
+            try:
+                play_mp3(path, alias=f"pfm{gen}_{index}", cancelled=lambda: gen != self._gen)
+            except RuntimeError as exc:
+                log(f"playback failed ({exc}); using the Windows voice")
+                if gen == self._gen:
+                    self._fallback_from(index, chunks, rate, blocking, respelled)
+                return
+            finally:
+                self._discard(path)
+
+    def _fallback_from(
+        self, index: int, chunks: list[str], rate: int | None, blocking: bool, respelled: str | None
+    ) -> None:
+        """Hand what hasn't been spoken yet to the Windows voice.
+
+        The overrides respelling covers the whole text, so it is only usable
+        when nothing has been spoken yet."""
+        remaining = " ".join(chunks[index:])
+        self.fallback.say(remaining, rate, blocking=blocking, respelled=respelled if index == 0 else None)
+
+    def _discard(self, path: Path | None) -> None:
+        """Remove a clip that was synthesized without a cache folder."""
+        if path is not None and self.cache_dir is None:
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
     def _cache_path(self, text: str, pct: int) -> Path | None:
         """Where the MP3 for this exact utterance lives on disk (None: caching is off)."""
@@ -927,7 +990,11 @@ class EdgeSpeaker:
     def _synthesize(self, text: str, pct: int) -> Path:
         target = self._cache_path(text, pct)
         if target is None:
-            target = Path(tempfile.gettempdir()) / f"pronounce-for-me-{os.getpid()}-{threading.get_ident()}.mp3"
+            # Unique per clip: with caching off, a paragraph's later sentences are
+            # fetched while an earlier one is still playing from its own file.
+            handle, name = tempfile.mkstemp(prefix="pronounce-for-me-", suffix=".mp3")
+            os.close(handle)
+            target = Path(name)
         elif target.exists() and target.stat().st_size > 0:
             return target
 
