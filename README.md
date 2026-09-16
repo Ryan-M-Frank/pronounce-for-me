@@ -1,20 +1,29 @@
 # pronounce-for-me
 
+MIT-licensed pronunciation helper. **Windows:** global hotkeys. **macOS:**
+experimental command-line speech and voice auditions; no global hotkeys yet.
+See [Mac setup and tester checklist](docs/MACOS.md) and [contributing](CONTRIBUTING.md).
+Download the entire repository: the Python entry point now uses shared and
+platform-specific modules.
+
+
 Highlight a word anywhere in Windows, press **Ctrl+Alt+P**, and hear it read
 aloud. Made for drilling medical terminology while reading PDFs, slides, Anki
 cards or web pages.
 
-Two voice engines, picked in `config.json`:
+Choose a speech engine in `config.json` or for one run with `--backend`:
 
-| `backend` | Voice | Needs | Pronounces "cholecystectomy"… |
-|---|---|---|---|
-| `"edge"` (default) | Microsoft Edge's neural voices (Michelle, Jenny, Aria, Andrew, Brian, Emma, Ava, …) | internet + `pip install edge-tts` | correctly |
-| `"sapi"` | the built-in Windows voice (David / Zira) | nothing | letter by letter, badly |
+| `backend` | Voice | Needs |
+|---|---|---|
+| `"edge"` (default) | Microsoft Edge neural voices; Jenny by default | internet for new clips + `pip install edge-tts` |
+| `"native"` | Windows SAPI or the Mac's installed voices | no Python packages |
+| `"sapi"` / `"macos"` | Platform-specific aliases for `native` | Windows / macOS respectively |
 
-The Edge backend falls back to the Windows voice automatically whenever it
-can't reach the service, so the hotkey always does *something*.
+If Edge cannot synthesize speech, the app tries the platform's built-in voice.
+Pronunciation varies by voice and term; audition difficult words before relying
+on a voice for study. Mac support is an unverified command-line preview.
 
-## Setup
+## Windows setup
 
 1. **Python 3.10+** — [python.org](https://www.python.org/downloads/windows/),
    the Python install manager, or `winget install Python.Python.3.13`.
@@ -61,7 +70,7 @@ tries one without saving anything:
 python pronounce_for_me.py --voice en-US-JennyNeural --say "sphygmomanometer"
 ```
 
-## Hotkeys
+## Windows hotkeys
 
 | Keys | Action |
 |---|---|
@@ -75,7 +84,8 @@ automatically read a touch slower than short ones (see `long_term_rate`).
 
 ## Configuration
 
-`config.json` is created next to the script on first run:
+`config.json` is created next to the script on Windows; Mac settings live in
+`~/Library/Application Support/pronounce-for-me/`. The defaults are:
 
 ```json
 {
@@ -84,7 +94,7 @@ automatically read a touch slower than short ones (see `long_term_rate`).
   "hotkey_stop": "ctrl+alt+s",
   "hotkey_quit": "ctrl+alt+q",
   "backend": "edge",
-  "edge_voice": "en-US-MichelleNeural",
+  "edge_voice": "en-US-JennyNeural",
   "cache_dir": "",
   "voice": "",
   "rate": "-5%",
@@ -93,12 +103,12 @@ automatically read a touch slower than short ones (see `long_term_rate`).
   "long_term_letters": 12,
   "max_chars": 400,
   "restore_clipboard": true,
-  "log_history": true,
+  "log_history": false,
   "use_overrides": true
 }
 ```
 
-* `backend` — `"edge"` or `"sapi"`.
+* `backend` — `"edge"` or `"native"`; `"sapi"` and `"macos"` are platform-specific aliases.
 * `edge_voice` — an Edge voice's *ShortName*. Good English ones, roughly by
   how fast the service produces them — women: `en-US-JennyNeural` and
   `en-US-AriaNeural` (~1 s per word), `en-US-MichelleNeural` (~1.5 s),
@@ -120,7 +130,7 @@ automatically read a touch slower than short ones (see `long_term_rate`).
 * `restore_clipboard` — the selection is grabbed by simulating Ctrl+C; with
   this on, whatever text was on your clipboard beforehand is put back.
 * `log_history` — append every term you look up to `history.tsv` (timestamp +
-  term). Handy for building flashcards from what you actually struggled with.
+  term) when using the Windows listener. Off by default; opt in if you want a study log.
 * `use_overrides` — see below.
 
 Hotkey syntax: modifiers joined with `+`, then a key — `ctrl`, `alt`, `shift`,
@@ -128,7 +138,7 @@ Hotkey syntax: modifiers joined with `+`, then a key — `ctrl`, `alt`, `shift`,
 
 ## Fixing mispronunciations
 
-The Windows voice mangles plenty of Latin and Greek. `overrides.json` maps a
+The Windows voice can mispronounce Latin and Greek terms. `overrides.json` maps a
 term (or phrase) to a phonetic respelling it *does* read correctly:
 
 ```json
@@ -143,7 +153,7 @@ Matching is case-insensitive and possessives match too (`Raynaud's` hits
 otherwise each matching word inside the selection is swapped.
 
 By default (`"use_overrides": true`) respellings are fed **only to the Windows
-voice** — the neural voices already say these words properly and would read
+voice** — neural voices may handle the original spelling better and can read
 `sing-kuh-pee` literally. `"always"` sends them to both engines (useful for
 an eponym the neural voice also gets wrong); `false` disables them. Tune by
 ear with `--say`.
@@ -155,7 +165,7 @@ ear with `--say`.
   repeats are instant and work offline. Longer selections are cached one
   sentence at a time, so a paragraph starts playing after its first sentence.
 * With the `edge` backend the highlighted text is sent to Microsoft's servers.
-  Use `"backend": "sapi"` if that's not okay for what you're reading.
+  Use `"backend": "native"` for local speech instead.
 * Edge's read-aloud service is undocumented; Microsoft has changed it before.
   If every term suddenly falls back to the Windows voice, run
   `pip install -U edge-tts`.
@@ -170,7 +180,7 @@ voices are the same voice family, just served online. (The third-party
 can unlock them offline, but it needs admin rights to install and, per its
 README, no longer works with the newest voice packs.)
 
-## How it works
+## How it works on Windows
 
 1. `RegisterHotKey` registers the four combos system-wide; the script sits in
    a Windows message loop waiting for `WM_HOTKEY`.
@@ -207,4 +217,14 @@ Windows through `ctypes`.
 
 ## Roadmap
 
+* Mac selection hotkeys and permission setup; see [the Mac milestones](docs/MACOS.md).
+* Menu-bar controls, signed Mac releases, and real-device acceptance testing.
 * A hotkey to cycle through a shortlist of voices.
+
+## License and support
+
+[MIT](LICENSE). New installations use Jenny and do not record study history unless
+`log_history` is enabled. Existing configuration is preserved. The code is open
+source; Microsoft's online voices are an external service, not bundled open-source
+models. Edge sends selected text to that service. Pronunciation varies by voice
+and term. Mac CLI support is a preview awaiting real-device testing.
