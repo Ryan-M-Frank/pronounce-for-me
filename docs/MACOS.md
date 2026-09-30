@@ -45,16 +45,19 @@ Settings: `~/Library/Application Support/pronounce-for-me/config.json`.
 Audio cache: `~/Library/Caches/pronounce-for-me/`.
 History, if enabled: `~/Library/Application Support/pronounce-for-me/history.tsv`.
 Bundled pronunciation overrides still come from the repository's `overrides.json`.
-New installations default to Jenny and history logging off. Existing Windows
-settings are retained. Edge sends spoken text to Microsoft's online service;
+New installations default to Jenny and history logging off. Explicit settings
+in existing files are retained; omitted keys adopt the current defaults.
+Edge sends spoken text to Microsoft's online service;
 the native backend runs locally. Cached Edge audio can be replayed offline.
 
 ## Automated checks and real-Mac acceptance checklist
 
 CI runs on Windows and macOS with Python 3.10, 3.13 and 3.14. A macOS-only
 test invokes the real system voice and verifies the generated audio file. It
-does not verify audible playback, clipboard access in desktop apps, or sound
-quality. Those still require the checks below.
+also checks accented-text clipboard round trips under a non-UTF-8 parent locale
+on disposable hosted Mac runners. It does not verify audible playback,
+clipboard access in desktop apps, or sound quality. Those still require the
+checks below.
 
 - [ ] Record macOS version, CPU (Apple Silicon/Intel), and Python version.
 - [ ] Help, voice listing and default settings creation succeed.

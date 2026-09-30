@@ -2,6 +2,7 @@
 import contextlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -122,10 +123,6 @@ class MacTests(unittest.TestCase):
             self.assertEqual(mac.grab_selection(), 'syncope')
         self.assertEqual(run.call_args.args[0], ['/usr/bin/pbpaste'])
 
-
-if __name__ == '__main__':
-    unittest.main()
-
 class CliValidationTests(unittest.TestCase):
     def test_empty_text_does_not_start_speaker(self):
         for text in ('', '  ', '...'):
@@ -239,6 +236,55 @@ class MacNativeIntegrationTests(unittest.TestCase):
                 self.assertGreater(len(data), 1000)
             finally:
                 voice.stop()
+
+
+class ReviewRegressionTests(unittest.TestCase):
+    def test_clipboard_preserves_accents_under_non_utf8_parent_locale(self):
+        text = 'M\u00e9ni\u00e8re and Barr\u00e9'
+        for parent in ({}, {'LC_ALL': 'C', 'LC_CTYPE': 'C', 'LANG': 'C'}):
+            with self.subTest(parent=parent), patch.dict(mac.os.environ, parent, clear=True), \
+                 patch.object(mac.subprocess, 'run', return_value=Mock(stdout=text.encode('utf-8'))) as run:
+                self.assertEqual(mac.grab_selection(), text)
+                self.assertEqual(run.call_args.kwargs['env']['LC_ALL'], 'en_US.UTF-8')
+                self.assertEqual(dict(mac.os.environ), parent)
+
+    def test_partial_configuration_uses_current_defaults_without_rewriting(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'config.json'
+            original = '{"backend":"edge","rate":"+15%"}'
+            path.write_text(original)
+            with patch.object(app, 'CONFIG_PATH', path):
+                cfg = app.load_config()
+            self.assertEqual(cfg['rate'], '+15%')
+            self.assertEqual(cfg['edge_voice'], 'en-US-JennyNeural')
+            self.assertFalse(cfg['log_history'])
+            self.assertEqual(path.read_text(), original)
+
+    def test_unknown_windows_backend_reports_error_instead_of_silent_fallback(self):
+        with patch.object(app.sys, 'platform', 'win32'), \
+             patch.object(app, 'load_config', return_value={**app.DEFAULT_CONFIG, 'backend': 'windows'}), \
+             patch.object(app, 'make_speaker') as make, \
+             contextlib.redirect_stderr(io.StringIO()) as errors, \
+             self.assertRaises(SystemExit) as result:
+            app.main(['--say', 'syncope'])
+        self.assertEqual(result.exception.code, 2)
+        self.assertIn('use edge or native', errors.getvalue())
+        make.assert_not_called()
+
+    @unittest.skipUnless(
+        sys.platform == 'darwin' and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted',
+        'uses only the disposable hosted Mac runner clipboard',
+    )
+    def test_real_mac_clipboard_roundtrip_with_c_locale(self):
+        text = 'M\u00e9ni\u00e8re and Barr\u00e9'
+        utf8_env = dict(os.environ, LC_ALL='en_US.UTF-8')
+        try:
+            subprocess.run(['/usr/bin/pbcopy'], input=text.encode('utf-8'),
+                           env=utf8_env, check=True)
+            with patch.dict(mac.os.environ, {'LC_ALL': 'C', 'LC_CTYPE': 'C', 'LANG': 'C'}):
+                self.assertEqual(mac.grab_selection(), text)
+        finally:
+            subprocess.run(['/usr/bin/pbcopy'], input=b'', env=utf8_env, check=True)
 
 
 if __name__ == '__main__':

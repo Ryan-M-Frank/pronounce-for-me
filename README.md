@@ -202,6 +202,15 @@ README, no longer works with the newest voice packs.)
 Everything except `edge-tts` is the Python standard library talking to
 Windows through `ctypes`.
 
+## Configuration compatibility
+
+Configuration files are not rewritten when loaded. Keys you explicitly set keep
+their values; omitted keys inherit the current defaults. Unknown backend names
+now produce an error instead of silently selecting Windows SAPI. Use `edge` or
+`native` (or the platform-specific `sapi` / `macos` alias). `max_chars` must be
+positive and `rate` must be numeric or a percentage. If the hidden Windows
+launcher exits, run `start.bat` to see the validation error and correct the file.
+
 ## Troubleshooting
 
 * **"FAILED - another app already owns this combo"** — pick a different combo
@@ -224,7 +233,8 @@ Windows through `ctypes`.
 ## License and support
 
 [MIT](LICENSE). New installations use Jenny and do not record study history unless
-`log_history` is enabled. Existing configuration is preserved. The code is open
+`log_history` is enabled. Explicit settings in existing configuration files are retained;
+omitted keys use the current defaults (including Jenny and history off). The code is open
 source; Microsoft's online voices are an external service, not bundled open-source
 models. Edge sends selected text to that service. Pronunciation varies by voice
 and term. Mac CLI support is a preview awaiting real-device testing.

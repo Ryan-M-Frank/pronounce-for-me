@@ -1,5 +1,6 @@
 """macOS command-line preview; no global keyboard hooks or permissions required."""
 from __future__ import annotations
+import os
 import subprocess
 import threading
 import time
@@ -94,7 +95,9 @@ def list_native_voices():
 
 def grab_selection(restore=False):
     """Read explicitly copied text; do not simulate keys in this milestone."""
-    return subprocess.run(["/usr/bin/pbpaste"], check=True,
+    # Pin the child's encoding even when the calling shell sets LC_ALL=C.
+    env = dict(os.environ, LC_ALL="en_US.UTF-8")
+    return subprocess.run(["/usr/bin/pbpaste"], check=True, env=env,
                           stdout=subprocess.PIPE).stdout.decode("utf-8", "replace")
 
 
